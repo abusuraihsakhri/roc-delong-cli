@@ -73,41 +73,62 @@ psi(x, y) = 1 if x > y, 0.5 if x == y, 0 if x < y
 
 ## 💻 CLI Quickstart & Usage
 
-### 1. Guided Interactive Mode
+### Installation
 ```bash
-python cli.py
+pip install -e ".[dev]"
 ```
 
-### 2. Direct Parameterized Evaluation
+### Environment Setup
+The audit trail requires a secret key to be set:
 ```bash
-python cli.py --task-id <value> --target <value> --primary <value> --secondary <value>
+export AUDIT_SECRET_KEY="your-secret-key-at-least-16-chars"
 ```
 
-### Parameter Reference
-- `--task-id`: Specifies input measurement or parameter value.
-- `--target`: Specifies input measurement or parameter value.
-- `--primary`: Specifies input measurement or parameter value.
-- `--secondary`: Specifies input measurement or parameter value.
-- `--critical`: Specifies input measurement or parameter value.
-- `--status`: Specifies input measurement or parameter value.
-- `--input`: Specifies input measurement or parameter value.
-- `--output`: Specifies input measurement or parameter value.
+### 1. Audit Command (Single Task Evaluation)
+```bash
+python cli.py audit --task-id TASK-001 --target KEY-01 --primary 28.5 --secondary 14.2
+```
 
-### Input Data Schema
+### 2. Chat Command (Supervisory Query)
+```bash
+python cli.py chat "Explain the safety protocols"
+```
 
-| Field | Description | Requirement |
-|:------|:------------|:------------|
-| `suite_name` | Parameter / observation metric | Required |
-| `system_slug` | Parameter / observation metric | Required |
-| `standard_reference` | Parameter / observation metric | Required |
-| `test_cases` | Parameter / observation metric | Required |
+### 3. Batch Command (CSV Processing)
+```bash
+python cli.py batch -i input.csv -o results.csv
+```
+
+### 4. Verify Audit Trail
+```bash
+python cli.py verify-audit
+```
+
+### 5. Serve REST API
+```bash
+python cli.py serve --host 127.0.0.1 --port 8000
+```
+
+### ROC Analysis Commands (roc_delong_cli.py)
+
+Compute ROC curve, DeLong CI, and Youden cutpoint for one test:
+```bash
+python roc_delong_cli.py compute --data sample_data.csv --label-col disease_status --score-col biomarker_a
+```
+
+Compare two correlated ROC curves:
+```bash
+python roc_delong_cli.py compare --data sample_data.csv --label-col disease_status --score-a biomarker_a --score-b biomarker_b
+```
 
 ---
 
 ## 🛡️ Security & Enterprise Architecture
 
-* **Zero-PHI Outbound Interceptor:** Active AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
-* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
+* **Zero-PHI Outbound Interceptor:** Active regex inspection blocking SSNs, MRNs, phone numbers, emails, DOBs, and patient identifiers.
+* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs with full signature verification for every evaluation and state transition.
+* **Secure Key Management:** Audit signing key loaded from `AUDIT_SECRET_KEY` environment variable (minimum 16 characters). No hardcoded defaults.
+* **Path Traversal Protection:** Batch command validates all file paths remain within the working directory.
 * **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
 * **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
 * **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
@@ -122,17 +143,34 @@ Run the automated test suite:
 pytest -v
 ```
 
+Run the core ROC/DeLong unit tests directly:
+
+```bash
+python tests/unit_test_roc_delong_cli.py
+```
+
 Execute high-throughput batch simulation benchmarks:
 
 ```bash
-python simulator.py --tasks 1000 --concurrency 8
+python simulator.py 1000
 ```
 
 ---
 
 ## 🐳 Container Deployment
 
+Create a `.env` file with your audit secret key:
+```bash
+echo "AUDIT_SECRET_KEY=your-production-secret-key-here" > .env
+```
+
+Build and run:
 ```bash
 docker build -t roc-delong-cli .
 docker run -p 8000:8000 roc-delong-cli
+```
+
+Or use docker-compose:
+```bash
+docker-compose up -d
 ```

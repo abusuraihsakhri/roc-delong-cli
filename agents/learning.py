@@ -1,7 +1,6 @@
 """
 Autonomous Bayesian Calibration & Active Learning Feedback Engine for roc-delong-cli.
 """
-import math
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 
@@ -31,7 +30,7 @@ class ActiveLearningEngine:
         m.total_evaluations += 1
         if was_concordant:
             m.concordant_decisions += 1
-        
+
         # Update dynamic Bayesian reliability weight
         acc = m.concordant_decisions / max(1, m.total_evaluations)
         m.dynamic_weight = round(max(0.2, min(2.0, acc * 1.5)), 3)
