@@ -66,3 +66,20 @@ def test_cli_invalid_scores_report_error(tmp_path, capsys):
         main(["compute", "--data", str(csv), "--label-col", "y", "--score-col", "s"])
     assert exc.value.code == 1
     assert "finite" in capsys.readouterr().err.lower()
+
+
+def test_multiclass_labels_rejected():
+    with pytest.raises(ValueError, match="exactly two"):
+        roc_curve([0.1, 0.2, 0.3], ["A", "B", "C"], "A")
+
+
+def test_batch_cannot_overwrite_input(tmp_path, monkeypatch, capsys):
+    from cli import main as audit_main
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / "records.csv"
+    content = "task_id,target_identifier,primary_metric\\nT1,KEY-01,5\\n"
+    path.write_text(content)
+    status = audit_main(["batch", "-i", "records.csv", "-o", "records.csv"])
+    assert status == 1
+    assert path.read_text() == content
+    assert "must differ" in capsys.readouterr().err
