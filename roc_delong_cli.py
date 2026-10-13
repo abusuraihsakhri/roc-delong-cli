@@ -42,6 +42,8 @@ def _validated_samples(scores, labels):
         raise ValueError("At least one observation is required.")
     if not np.all(np.isfinite(scores)):
         raise ValueError("Scores must be finite numbers (no NaN or infinity).")
+    if np.unique(labels).size != 2:
+        raise ValueError("Outcome labels must contain exactly two distinct classes.")
     return scores, labels
 
 
@@ -117,7 +119,7 @@ def youden_cutpoint(thresholds, fpr, tpr):
 # ---------------------------------------------------------------------------
 
 def delong_components(pos_scores, neg_scores):
-    """DeLong placement vectors with half-credit for ties, O(N log N) memory.
+    """DeLong placement vectors with half-credit for ties, O(N log N) time.
 
     The two vectors preserve subject order for paired covariance estimation.
     """
