@@ -77,7 +77,7 @@ def test_batch_cannot_overwrite_input(tmp_path, monkeypatch, capsys):
     from cli import main as audit_main
     monkeypatch.chdir(tmp_path)
     path = tmp_path / "records.csv"
-    content = "task_id,target_identifier,primary_metric\\nT1,KEY-01,5\\n"
+    content = "task_id,target_identifier,primary_metric\nT1,KEY-01,5\n"
     path.write_text(content)
     status = audit_main(["batch", "-i", "records.csv", "-o", "records.csv"])
     assert status == 1
