@@ -18,7 +18,7 @@ def _safe_resolve_path(path_str: str, must_exist: bool = False) -> Path:
     """Resolve a path safely, preventing directory traversal outside the working directory."""
     path = Path(path_str).resolve()
     cwd = Path.cwd().resolve()
-    if not str(path).startswith(str(cwd)):
+    if not path.is_relative_to(cwd):
         raise ValueError(f"Path '{path_str}' is outside the working directory.")
     if must_exist and not path.exists():
         raise FileNotFoundError(f"File not found: '{path_str}'")
@@ -107,7 +107,7 @@ def main(argv=None):
             print(f"Error reading CSV: {exc}", file=sys.stderr)
             return 1
 
-        out_fields = fieldnames + ["overall_urgency", "integrity_status", "total_alerts", "audit_hash"]
+        out_fields = list(dict.fromkeys(fieldnames + ["overall_urgency", "integrity_status", "total_alerts", "audit_hash"]))
         out_rows = []
         for r in rows:
             try:
