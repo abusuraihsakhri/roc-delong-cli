@@ -1,176 +1,73 @@
-# Roc Delong Cli
+# ROC & DeLong CLI
 
-> **Domain:** Clinical Decision Support & Biomedical Computing  
-> **Reference Guidelines & Standards:** `Standard Clinical Formulations & ISO/IEC Quality Frameworks`
+Empirical receiver operating characteristic (ROC) analysis, Youden-index thresholds, and nonparametric DeLong AUC inference. Use the Python command-line tool or the static, browser-based interface.
 
-<div align="center">
+**Browser application:** The repository's configured Pages address is [roc-delong-cli](https://abusuraihsakhri.github.io/roc-delong-cli/). See [the static app source](web/index.html) if that site has not yet been published from the repository's root directory. The link is included from repository metadata; live availability should be checked after deployment.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
-![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
-![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
+## Features
 
-</div>
+- ROC curve and trapezoidal AUC, with half-credit for tied positive/negative scores.
+- Youden's J (sensitivity + specificity − 1) and its highest-threshold maximizing cutpoint.
+- DeLong normal-approximation confidence interval for one AUC.
+- Two-sided paired DeLong z-test comparing scores measured on **the same subjects in the same row order**.
+- CSV thresholds and ROC image export (PNG from Python; CSV and SVG from the browser).
+- Input validation for missing/nonfinite scores, outcome classes, and paired sample lengths.
+- Browser analysis entirely client-side: no backend, Pyodide, account, or upload service.
 
----
+## Browser usage
 
-## 📖 What It Does
+Open the Pages link or serve this repository locally, then open `web/index.html`. Upload a CSV or select **Load demonstration data**. Choose the outcome column, positive label, and one or two score columns; click **Analyze ROC data**. Download the threshold table or SVG plot.
 
-ROC DeLong CLI
-==============
+Each CSV row must correspond to one subject. Both score columns must be numerical and complete, and **higher scores must indicate the positive outcome**. The browser accepts at most 20,000 observations and a 5 MiB CSV file.
 
-Computes an empirical ROC curve with the Youden-index optimal cutpoint for a
-single diagnostic test / biomarker, and statistically compares two
-correlated ROC curves (e.g. two biomarkers measured on the same subjects)
-using the DeLong et al. (1988) nonparametric test.
+The page makes no network requests for uploaded data, external scripts, or fonts. Uploaded data are kept only in the current tab and are not saved to browser storage. Do not infer that this privacy property extends to the separate FastAPI audit service.
 
-Core methods implemented:
-  - Empirical ROC curve via counting (equivalent to the trapezoidal rule
-    over (FPR, TPR) points), with AUC computed as the Mann-Whitney U
-    statistic (which is exactly the trapezoidal-rule AUC of the empirical
-    ROC curve).
-  - Youden index (sensitivity + specificity - 1) to select the optimal
-    cutpoint.
-  - DeLong (1988) covariance of AUCs via Mann-Whitney U "structural
-    components", for a DeLong-method confidence interval on a single AUC
-    and for a two-sample paired z-test comparing two correlated AUCs.
+## Python installation and CLI
 
----
-
-## ⚙️ Key Capabilities & Algorithmic Modules
-
-### 🔬 Analytical Functions
-
-- **`split_by_label()`**: Split parallel score/label arrays into positive- and negative-class
-score arrays.
-- **`roc_curve()`**: Empirical ROC curve.
-
-Returns (thresholds, fpr, tpr) as 1-D numpy arrays, ordered so that
-threshold decreases from +inf down to the minimum observed score
-(i.e. FPR/TPR increase from (0,0) to (1,1)). A subject is classified
-positive when score >= threshold.
-- **`auc_trapezoidal()`**: AUC via the trapezoidal rule over (FPR, TPR) points.
-- **`youden_cutpoint()`**: Find the threshold maximizing Youden's J = sensitivity + specificity - 1.
-
-Returns a dict with the cutpoint threshold, sensitivity, specificity and
-J statistic. The +inf threshold (the trivial all-negative point) is
-excluded from consideration.
-- **`delong_components()`**: Mann-Whitney U structural components for one test (DeLong et al. 1988).
-
-pos_scores: 1-D array of scores for the m positive-class subjects.
-neg_scores: 1-D array of scores for the n negative-class subjects.
-
-Returns (V10, V01, auc) where:
-  V10 has shape (m,): the average, over negatives, of psi(X_i, Y_j)
-  V01 has shape (n,): the average, over positives, of psi(X_i, Y_j)
-  auc is the Mann-Whitney U estimate of the AUC (mean of the psi matrix)
-
-psi(x, y) = 1 if x > y, 0.5 if x == y, 0 if x < y
-
----
-
-## 💻 CLI Quickstart & Usage
-
-### Installation
-```bash
-pip install -e ".[dev]"
-```
-
-### Environment Setup
-The audit trail requires a secret key to be set:
-```bash
-export AUDIT_SECRET_KEY="your-secret-key-at-least-16-chars"
-```
-
-### 1. Audit Command (Single Task Evaluation)
-```bash
-python cli.py audit --task-id TASK-001 --target KEY-01 --primary 28.5 --secondary 14.2
-```
-
-### 2. Chat Command (Supervisory Query)
-```bash
-python cli.py chat "Explain the safety protocols"
-```
-
-### 3. Batch Command (CSV Processing)
-```bash
-python cli.py batch -i input.csv -o results.csv
-```
-
-### 4. Verify Audit Trail
-```bash
-python cli.py verify-audit
-```
-
-### 5. Serve REST API
-```bash
-python cli.py serve --host 127.0.0.1 --port 8000
-```
-
-### ROC Analysis Commands (roc_delong_cli.py)
-
-Compute ROC curve, DeLong CI, and Youden cutpoint for one test:
-```bash
-python roc_delong_cli.py compute --data sample_data.csv --label-col disease_status --score-col biomarker_a
-```
-
-Compare two correlated ROC curves:
-```bash
-python roc_delong_cli.py compare --data sample_data.csv --label-col disease_status --score-a biomarker_a --score-b biomarker_b
-```
-
----
-
-## 🛡️ Security & Enterprise Architecture
-
-* **Zero-PHI Outbound Interceptor:** Active regex inspection blocking SSNs, MRNs, phone numbers, emails, DOBs, and patient identifiers.
-* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs with full signature verification for every evaluation and state transition.
-* **Secure Key Management:** Audit signing key loaded from `AUDIT_SECRET_KEY` environment variable (minimum 16 characters). No hardcoded defaults.
-* **Path Traversal Protection:** Batch command validates all file paths remain within the working directory.
-* **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
-* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
-* **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
-
----
-
-## 🧪 Testing & Verification
-
-Run the automated test suite:
+Requires Python 3.10 or later:
 
 ```bash
-pytest -v
+python -m pip install -e .
 ```
 
-Run the core ROC/DeLong unit tests directly:
+Single test (AUC, 95% DeLong CI, Youden cutpoint):
 
 ```bash
-python tests/unit_test_roc_delong_cli.py
+roc-delong compute --data sample_data.csv --label-col disease_status --score-col biomarker_a --output-csv roc.csv --plot roc.png
 ```
 
-Execute high-throughput batch simulation benchmarks:
+Two paired tests (difference in AUC and two-sided p-value):
 
 ```bash
-python simulator.py 1000
+roc-delong compare --data sample_data.csv --label-col disease_status --score-a biomarker_a --score-b biomarker_b --output-csv comparison.csv --plot comparison.png
 ```
 
----
+Both commands default to positive label `1`; specify `--positive-label` for another class. `compute` also accepts `--alpha` to change the nominal two-sided confidence level. Python implementation: [`roc_delong_cli.py`](roc_delong_cli.py). The supplementary `roc-delong-cli` entry point still provides the pre-existing `audit`, `batch`, `chat`, `verify-audit`, and `serve` commands; these are distinct from ROC analysis.
 
-## 🐳 Container Deployment
+## Statistical limitations
 
-Create a `.env` file with your audit secret key:
+DeLong variance estimation requires **at least two positive and two negative observations**. The paired test assumes exchangeable independent subjects and matched rows; it is not a test for independent datasets, repeated/clustered observations, or missing-score imputation. A nonzero AUC difference with exactly zero estimated difference variance has an **undefined z-test** and is reported as an error rather than an artificial p-value.
+
+Reported AUC confidence intervals use a normal approximation and are clipped to the [0, 1] range. Selection of the maximum Youden index is descriptive; no adjustment is made for threshold-selection optimism, spectrum effects, or multiple comparisons. Results require independent clinical/statistical validation before consequential use.
+
+## Local development and tests
+
 ```bash
-echo "AUDIT_SECRET_KEY=your-production-secret-key-here" > .env
+python -m pip install -e ".[dev]"
+python -m pytest -v
+node --check web/roc.js
+node tests/browser_smoke.cjs
+python -m pip check
 ```
 
-Build and run:
-```bash
-docker build -t roc-delong-cli .
-docker run -p 8000:8000 roc-delong-cli
-```
+To serve the static browser app locally, run `python -m http.server 8000` from the repository root and open `http://localhost:8000/web/`. The app is plain HTML/CSS/JavaScript and runs in current Chrome, Firefox, Safari, and Edge releases. The core Python statistics use NumPy and SciPy; Matplotlib is used for PNG plots.
 
-Or use docker-compose:
-```bash
-docker-compose up -d
-```
+An **optional** FastAPI service preserves the repository's separate historical audit workflow and requires `AUDIT_SECRET_KEY` (16+ characters). For that service, install `.[web]` and use `python cli.py serve`. Its mock supervisory replies and pattern-based identifier checker should not be represented as validated clinical guidance or comprehensive de-identification.
+
+## Deployment
+
+The static browser app has no build step. For GitHub Pages configured to publish from `master` at the repository root, `index.html` links to the application at `web/index.html`. If Pages uses another publishing source, configure that source accordingly. GitHub Pages cannot host the optional FastAPI server.
+
+## License
+
+[MIT](LICENSE).
