@@ -95,6 +95,9 @@ def main(argv=None):
     if args.command == "batch":
         input_path = _safe_resolve_path(args.input, must_exist=True)
         output_path = _safe_resolve_path(args.output, must_exist=False)
+        if input_path == output_path:
+            print("Input and output CSV paths must differ.", file=sys.stderr)
+            return 1
 
         try:
             with open(input_path, mode="r", encoding="utf-8-sig") as f:
