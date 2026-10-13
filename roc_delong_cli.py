@@ -32,49 +32,53 @@ from scipy.stats import norm
 # Core ROC / Youden logic
 # ---------------------------------------------------------------------------
 
-def split_by_label(scores, labels, positive_label):
-    """Split parallel score/label arrays into positive- and negative-class
-    score arrays."""
+def _validated_samples(scores, labels):
+    """Validate parallel 1-D arrays; do not silently drop incomplete subjects."""
     scores = np.asarray(scores, dtype=float)
     labels = np.asarray(labels)
+    if scores.ndim != 1 or labels.ndim != 1 or scores.size != labels.size:
+        raise ValueError("Scores and labels must be one-dimensional arrays of equal length.")
+    if not scores.size:
+        raise ValueError("At least one observation is required.")
+    if not np.all(np.isfinite(scores)):
+        raise ValueError("Scores must be finite numbers (no NaN or infinity).")
+    return scores, labels
+
+
+def _validated_score_vector(values, name):
+    values = np.asarray(values, dtype=float)
+    if values.ndim != 1 or values.size == 0 or not np.all(np.isfinite(values)):
+        raise ValueError(f"{name} must contain a nonempty one-dimensional array of finite scores.")
+    return values
+
+
+def split_by_label(scores, labels, positive_label):
+    """Split complete, paired observations by positive class."""
+    scores, labels = _validated_samples(scores, labels)
     pos_mask = labels == positive_label
-    neg_mask = ~pos_mask
-    if pos_mask.sum() == 0:
-        raise ValueError("No positive-class subjects found (check --positive-label).")
-    if neg_mask.sum() == 0:
-        raise ValueError("No negative-class subjects found (check --positive-label).")
-    return scores[pos_mask], scores[neg_mask]
+    if not np.any(pos_mask) or np.all(pos_mask):
+        raise ValueError("Both positive and negative subjects are required (check --positive-label).")
+    return scores[pos_mask], scores[~pos_mask]
 
 
 def roc_curve(scores, labels, positive_label):
-    """Empirical ROC curve.
-
-    Returns (thresholds, fpr, tpr) as 1-D numpy arrays, ordered so that
-    threshold decreases from +inf down to the minimum observed score
-    (i.e. FPR/TPR increase from (0,0) to (1,1)). A subject is classified
-    positive when score >= threshold.
-    """
-    scores = np.asarray(scores, dtype=float)
-    labels = np.asarray(labels)
+    """Empirical ROC; thresholds descend from infinity, grouping tied scores."""
+    scores, labels = _validated_samples(scores, labels)
     pos_mask = labels == positive_label
-    neg_mask = ~pos_mask
-    n_pos = pos_mask.sum()
-    n_neg = neg_mask.sum()
-    if n_pos == 0 or n_neg == 0:
+    n_pos = np.count_nonzero(pos_mask)
+    n_neg = scores.size - n_pos
+    if not n_pos or not n_neg:
         raise ValueError("ROC curve requires at least one subject in each class.")
 
-    uniq_desc = np.unique(scores)[::-1]
-    thresholds = np.concatenate(([np.inf], uniq_desc))
+    order = np.argsort(-scores, kind="stable")
+    ordered_scores = scores[order]
+    ordered_positive = pos_mask[order]
+    group_ends = np.r_[ordered_scores[1:] != ordered_scores[:-1], True]
+    thresholds = np.r_[np.inf, ordered_scores[group_ends]]
+    tp = np.r_[0, np.cumsum(ordered_positive)[group_ends]]
+    fp = np.r_[0, np.cumsum(~ordered_positive)[group_ends]]
+    return thresholds, fp / n_neg, tp / n_pos
 
-    tpr = np.empty(thresholds.shape[0])
-    fpr = np.empty(thresholds.shape[0])
-    for i, t in enumerate(thresholds):
-        predicted_pos = scores >= t
-        tp = np.count_nonzero(predicted_pos & pos_mask)
-        fp = np.count_nonzero(predicted_pos & neg_mask)
-        tpr[i] = tp / n_pos
-        fpr[i] = fp / n_neg
-    return thresholds, fpr, tpr
 
 
 _trapz = getattr(np, "trapezoid", None) or np.trapz
@@ -113,90 +117,87 @@ def youden_cutpoint(thresholds, fpr, tpr):
 # ---------------------------------------------------------------------------
 
 def delong_components(pos_scores, neg_scores):
-    """Mann-Whitney U structural components for one test (DeLong et al. 1988).
+    """DeLong placement vectors with half-credit for ties, O(N log N) memory.
 
-    pos_scores: 1-D array of scores for the m positive-class subjects.
-    neg_scores: 1-D array of scores for the n negative-class subjects.
-
-    Returns (V10, V01, auc) where:
-      V10 has shape (m,): the average, over negatives, of psi(X_i, Y_j)
-      V01 has shape (n,): the average, over positives, of psi(X_i, Y_j)
-      auc is the Mann-Whitney U estimate of the AUC (mean of the psi matrix)
-
-    psi(x, y) = 1 if x > y, 0.5 if x == y, 0 if x < y
+    The two vectors preserve subject order for paired covariance estimation.
     """
-    x = np.asarray(pos_scores, dtype=float).reshape(-1, 1)  # (m, 1)
-    y = np.asarray(neg_scores, dtype=float).reshape(1, -1)  # (1, n)
-    diff = x - y
-    psi = np.where(diff > 0, 1.0, np.where(diff == 0, 0.5, 0.0))  # (m, n)
+    x = _validated_score_vector(pos_scores, "Positive scores")
+    y = _validated_score_vector(neg_scores, "Negative scores")
+    m, n = x.size, y.size
+    sy = np.sort(y)
+    sx = np.sort(x)
 
-    v10 = psi.mean(axis=1)  # (m,)
-    v01 = psi.mean(axis=0)  # (n,)
-    auc = float(psi.mean())
-    return v10, v01, auc
+    neg_below = np.searchsorted(sy, x, side="left")
+    neg_at_or_below = np.searchsorted(sy, x, side="right")
+    v10 = (neg_below + neg_at_or_below) / (2.0 * n)
+
+    pos_below = np.searchsorted(sx, y, side="left")
+    pos_at_or_below = np.searchsorted(sx, y, side="right")
+    v01 = 1.0 - (pos_below + pos_at_or_below) / (2.0 * m)
+    return v10, v01, float(v10.mean())
+
 
 
 def delong_auc_variance(v10, v01):
-    """DeLong variance estimate of a single AUC from its structural components."""
-    m = v10.shape[0]
-    n = v01.shape[0]
-    s10 = np.var(v10, ddof=1) if m > 1 else 0.0
-    s01 = np.var(v01, ddof=1) if n > 1 else 0.0
-    return float(s10 / m + s01 / n)
+    """Estimated DeLong AUC variance; both outcome classes need >=2 subjects."""
+    v10 = _validated_score_vector(v10, "Positive placements")
+    v01 = _validated_score_vector(v01, "Negative placements")
+    if min(v10.size, v01.size) < 2:
+        raise ValueError("DeLong variance requires at least two subjects in each class.")
+    return float(np.var(v10, ddof=1) / v10.size + np.var(v01, ddof=1) / v01.size)
 
 
 def delong_ci(auc, variance, alpha=0.05):
-    """Two-sided (1 - alpha) confidence interval for an AUC, clipped to [0, 1]."""
-    se = np.sqrt(max(variance, 0.0))
+    """Two-sided normal-approximation DeLong CI, truncated to [0, 1]."""
+    if not (np.isfinite(alpha) and 0.0 < alpha < 1.0):
+        raise ValueError("alpha must be strictly between zero and one.")
+    if not (np.isfinite(auc) and 0.0 <= auc <= 1.0):
+        raise ValueError("AUC must lie between zero and one.")
+    if not (np.isfinite(variance) and variance >= 0.0):
+        raise ValueError("Estimated variance must be finite and nonnegative.")
+    se = float(np.sqrt(variance))
     z = norm.ppf(1.0 - alpha / 2.0)
-    lo = max(0.0, auc - z * se)
-    hi = min(1.0, auc + z * se)
-    return float(lo), float(hi), float(se)
+    return float(max(0.0, auc - z * se)), float(min(1.0, auc + z * se)), se
 
 
 def delong_test(pos_a, neg_a, pos_b, neg_b):
-    """DeLong (1988) test comparing two correlated (paired) AUCs.
+    """Paired, two-sided DeLong comparison (same subjects in the same order)."""
+    pos_a = _validated_score_vector(pos_a, "Positive A scores")
+    neg_a = _validated_score_vector(neg_a, "Negative A scores")
+    pos_b = _validated_score_vector(pos_b, "Positive B scores")
+    neg_b = _validated_score_vector(neg_b, "Negative B scores")
+    if pos_a.size != pos_b.size or neg_a.size != neg_b.size:
+        raise ValueError("Paired tests must have equal positive and negative sample counts.")
+    if min(pos_a.size, neg_a.size) < 2:
+        raise ValueError("DeLong comparison requires at least two subjects in each class.")
 
-    pos_a, pos_b: scores for test A and test B on the SAME positive
-                  subjects, in the same subject order (length m).
-    neg_a, neg_b: scores for test A and test B on the SAME negative
-                  subjects, in the same subject order (length n).
-
-    Returns a dict with both AUCs, their difference, the DeLong covariance
-    matrix, the z statistic and a two-sided p-value.
-    """
     v10_a, v01_a, auc_a = delong_components(pos_a, neg_a)
     v10_b, v01_b, auc_b = delong_components(pos_b, neg_b)
-
-    m = v10_a.shape[0]
-    n = v01_a.shape[0]
-
-    v10 = np.vstack([v10_a, v10_b])  # (2, m)
-    v01 = np.vstack([v01_a, v01_b])  # (2, n)
-
-    s10 = np.cov(v10, ddof=1) if m > 1 else np.zeros((2, 2))
-    s01 = np.cov(v01, ddof=1) if n > 1 else np.zeros((2, 2))
-    s = s10 / m + s01 / n  # (2, 2) covariance matrix of (auc_a, auc_b)
-
+    m, n = pos_a.size, neg_a.size
+    s10 = np.cov(np.vstack((v10_a, v10_b)), ddof=1)
+    s01 = np.cov(np.vstack((v01_a, v01_b)), ddof=1)
+    covariance = s10 / m + s01 / n
     diff = auc_a - auc_b
-    var_diff = float(s[0, 0] + s[1, 1] - 2.0 * s[0, 1])
-    if var_diff <= 0.0:
-        # Degenerate (e.g. identical tests): no distinguishable difference.
-        z = 0.0
-        p_value = 1.0
+
+    # Estimate variance directly from within-subject placement differences,
+    # avoiding catastrophic cancellation of nearly identical covariance terms.
+    d10, d01 = v10_a - v10_b, v01_a - v01_b
+    var_diff = float(np.var(d10, ddof=1) / m + np.var(d01, ddof=1) / n)
+    if var_diff == 0.0:
+        if abs(diff) > 1e-12:
+            raise ValueError("Paired AUC difference has zero estimated variance; the DeLong z-test is undefined.")
+        z, p_value = 0.0, 1.0
     else:
         z = float(diff / np.sqrt(var_diff))
-        p_value = float(2.0 * (1.0 - norm.cdf(abs(z))))
+        p_value = float(2.0 * norm.sf(abs(z)))
 
     return {
-        "auc_a": auc_a,
-        "auc_b": auc_b,
-        "diff": float(diff),
-        "var_diff": var_diff,
-        "z": z,
-        "p_value": p_value,
-        "cov_matrix": s,
+        "auc_a": auc_a, "auc_b": auc_b, "diff": float(diff),
+        "var_diff": var_diff, "z": z, "p_value": p_value,
+        "cov_matrix": covariance,
     }
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +486,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         args.func(args)
-    except (ValueError, FileNotFoundError) as exc:
+    except (ValueError, TypeError, OSError, csv.Error) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
