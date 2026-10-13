@@ -62,7 +62,7 @@ python -m pip check
 
 To serve the static browser app locally, run `python -m http.server 8000` from the repository root and open `http://localhost:8000/web/`. The app is plain HTML/CSS/JavaScript and runs in current Chrome, Firefox, Safari, and Edge releases. The core Python statistics use NumPy and SciPy; Matplotlib is used for PNG plots.
 
-An **optional** FastAPI service preserves the repository's separate historical audit workflow and requires `AUDIT_SECRET_KEY` (16+ characters). For that service, install `.[web]` and use `python cli.py serve`. Its mock supervisory replies and pattern-based identifier checker should not be represented as validated clinical guidance or comprehensive de-identification.
+An **optional** FastAPI service preserves the repository's separate historical audit workflow and requires `AUDIT_SECRET_KEY` (16+ characters). For that service, install `.[web]` and use `python cli.py serve`. Its mock supervisory replies, illustrative `enrichment.py` engines, and pattern-based identifier checker are **not** validated clinical guidance, complete implementations of the methods named in those modules, or comprehensive de-identification. Docker Compose binds its API to localhost by default; use a properly authenticated reverse proxy before any external exposure.
 
 ## Deployment
 
