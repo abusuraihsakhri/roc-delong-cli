@@ -46,6 +46,9 @@ const ROC = (() => {
     const bi = scoreB ? dataset.headers.indexOf(scoreB) : -1;
     if (li < 0 || ai < 0 || (scoreB && bi < 0)) throw new Error("Selected column not found.");
     if (li === ai || li === bi) throw new Error("Labels and scores must be in different columns.");
+    const distinctLabels = new Set(dataset.rows.map(r => r[li].trim()));
+    if (distinctLabels.has("") || distinctLabels.size !== 2 || !distinctLabels.has(positiveLabel))
+      throw new Error("Outcome must have exactly two nonempty classes, including the selected positive label.");
     const labels = [], a = [], b = [];
     for (const [i, row] of dataset.rows.entries()) {
       const raw = [row[ai], ...(bi >= 0 ? [row[bi]] : [])];
@@ -156,6 +159,15 @@ if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded
     $("status").textContent = message;
     $("status").classList.toggle("error", error);
   };
+  function clearResults() {
+    outcome = null; exported = []; chart = null;
+    $("summary").replaceChildren();
+    $("plot").replaceChildren();
+    $("preview").replaceChildren();
+    $("previewNote").textContent = "ROC threshold rows appear after analysis.";
+    $("downloadCsv").disabled = true;
+    $("downloadSvg").disabled = true;
+  }
   function setColumns() {
     const names = dataset.headers;
     const select = (id, selected) => {
@@ -192,12 +204,7 @@ if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded
   function load(text, source) {
     dataset = ROC.parseCSV(text);
     setColumns();
-    outcome = null; exported = [];
-    $("summary").replaceChildren();
-    $("plot").replaceChildren();
-    $("preview").replaceChildren();
-    $("downloadCsv").disabled = true;
-    $("downloadSvg").disabled = true;
+    clearResults();
     setStatus("Loaded " + source + ". Select columns and click Analyze.");
   }
   $("file").addEventListener("change", async e => {
@@ -206,7 +213,7 @@ if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded
     try {
       if (file.size > 5 * 1024 * 1024) throw new Error("Maximum CSV size is 5 MB.");
       load(await file.text(), file.name);
-    } catch (err) { dataset = null; setStatus(err.message, true); }
+    } catch (err) { dataset = null; clearResults(); $("fileDetails").textContent = "No dataset loaded"; setStatus(err.message, true); }
   });
   $("sample").addEventListener("click", () => {
     const rows = ["status,biomarker_a,biomarker_b",
@@ -220,6 +227,12 @@ if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded
   $("mode").addEventListener("change", () => {
     $("scoreBField").hidden = $("mode").value !== "compare";
   });
+  ["mode", "label", "positive", "scoreA", "scoreB"].forEach(id => {
+    $(id).addEventListener("change", () => {
+      clearResults();
+      if (dataset) setStatus("Selection changed. Click Analyze to recalculate.");
+    });
+  });
   $("analyze").addEventListener("click", () => {
     try {
       if (!dataset) throw new Error("Upload a CSV or load the sample first.");
@@ -230,12 +243,7 @@ if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded
       showResults(outcome, paired);
       setStatus("Analysis completed locally; no data uploaded.");
     } catch (err) {
-      outcome = null;
-      $("downloadCsv").disabled = true;
-      $("downloadSvg").disabled = true;
-      $("summary").replaceChildren();
-      $("plot").replaceChildren();
-      $("preview").replaceChildren();
+      clearResults();
       setStatus(err.message, true);
     }
   });
